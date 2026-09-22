@@ -1,0 +1,19 @@
+[project]
+name = "maptap-bot"
+version = "0.1.0"
+description = "Play MapTap daily puzzles in an isolated local mirror"
+authors = [
+    { name = "Enzo Mescall", email = "emm121@duke.edu" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "httpx>=0.28.1",
+    "playwright>=1.63.0",
+]
+
+[project.scripts]
+maptap = "maptap_bot:main"
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
