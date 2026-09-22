@@ -1,6 +1,6 @@
 # MapTap bot
 
-Python + Playwright solver for MapTap's five daily rounds, managed with uv.
+Python + Playwright solver for MapTap daily and Frontier modes, managed with uv.
 
 ```sh
 uv run maptap
@@ -15,12 +15,14 @@ uv run maptap --headed                  # watch it play (requires a desktop)
 uv run maptap --runs 3                  # three independent, fresh sessions
 uv run maptap --day September20         # another date in the local mirror
 uv run maptap --output artifacts/demo   # choose the evidence directory
+uv run maptap --mode frontier --rounds 20
 ```
 
-Each run prints the place, target latitude/longitude, base score, multiplier,
-weighted score, and the game's distance in kilometres. It saves `result.json`
-and `final.png` under `<output>/run-N/`. The JSON includes actual guessed
-coordinates, prompts, per-round scores, blocked requests, and JavaScript errors.
+Daily runs print the place, target coordinates, score, and distance. Frontier
+runs print the location, score, remaining seconds, fuel, and response time.
+Frontier defaults to 12 rounds; `--rounds` sets a different limit. Each run
+saves `result.json` and `final.png` under `<output>/run-N/`, including per-round
+scores, blocked requests, and JavaScript errors.
 Failures produce `failure.png` and `failure.txt` and exit with an error.
 Output files with the same names are replaced on subsequent invocations.
 
@@ -35,8 +37,11 @@ empty cookies and storage, including the complete New York City tutorial.
 Only static GET requests to MapTap, its tile host, and Google's Firebase script
 CDN are permitted. All writes, Firebase services, analytics, other hosts,
 WebSockets, and service workers are blocked. Redirects are not followed.
-No account is used and scores cannot reach the live leaderboards. `devmode=1` is
-also set, but network isolation does not depend on the game's developer mode.
+Daily mode sets `devmode=1`, but isolation does not depend on it. Frontier
+receives a synthetic local test user because the page requires login; its auth
+observer is intercepted before it can contact Firebase. The URL includes
+`unlimited=1` so local daily-run limits cannot block repeat tests. No scores
+can reach the live leaderboards.
 Blocked services can trigger the site's "Something didn't load" banner; this
 does not affect local scoring.
 
@@ -61,6 +66,13 @@ does not affect local scoring.
 - **Progress:** rounds advance automatically after the original reveal animation
   (roughly eight seconds). No Next button is needed. Fresh sessions use the
   default single-tap mode; the bot waits for the game's tap guard.
+- **Frontier:** `/frontier?from=practice` uses a client-side pool of about 6,900
+  locations. The displayed name can be matched to its coordinates in that pool.
+  Its round timer starts at 30 seconds, drops four seconds every three rounds,
+  and bottoms out at eight seconds. Overtime burns 25 fuel per second; inaccurate
+  taps also cost fuel. The bot submits through the page's `_frTap` test hook,
+  which follows the actual score, fuel, and round-advance code. It stops at the
+  configured limit before an endless perfect run can affect a leaderboard.
 
 | Element | Selector |
 | --- | --- |
@@ -84,18 +96,17 @@ upstream changes to globals or DOM selectors may require an update.
 
 ## Checks
 
-Browser validation on September 21, 2026:
+Browser validation:
 
-| Puzzle | Fresh sessions | Results |
+| Mode | Fresh sessions | Results |
 | --- | --- | --- |
-| September 21 | 3 | 1000/1000 each |
-| September 20 | 1 | 1000/1000 |
+| Daily, September 21 | 3 | 1000/1000 each |
+| Daily, September 20 | 1 | 1000/1000 |
+| Frontier, 20 rounds | 1 | 20 × 100 points, 250 fuel left |
 
-All 20 scoring taps earned 100/100 with game-reported distance 0 km, and all
-four sessions had no JavaScript errors. Reports and screenshots are in
-`artifacts/validation-today/` and `artifacts/validation-september20/` locally
-(generated artifacts are excluded from Git). This verifies these puzzles,
-not every historical or future daily file.
+Frontier taps took under 165 ms, including at the eight-second clock floor.
+There were no JavaScript errors. Reports and screenshots are under `artifacts/`
+locally; generated artifacts are excluded from Git.
 
 ```sh
 uv run python -m unittest discover -s tests -v

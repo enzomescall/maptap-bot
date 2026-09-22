@@ -72,3 +72,58 @@ async def play(page: Page) -> dict:
         raise RuntimeError("Round scores, final state, and displayed score disagree")
     print(f"  Total: {total}/1000", flush=True)
     return {"date": date, "rounds": rounds, "total": total}
+
+
+async def play_frontier(page: Page, round_limit: int) -> dict:
+    await page.locator("#fr-start-btn").click()
+    await page.locator("#fr-clock-time").wait_for(state="visible")
+    previous_prompt = ""
+    rounds = []
+    previous_total = 0
+    for number in range(1, round_limit + 1):
+        await page.wait_for_function(
+            """previous => document.getElementById('fr-prompt-name').textContent !== previous
+                && document.getElementById('fr-clock-time').textContent !== ''""",
+            arg=previous_prompt,
+        )
+        prompt = await page.locator("#fr-prompt-name").inner_text()
+        seconds_remaining = int(await page.locator("#fr-clock-time").inner_text())
+        before = await page.evaluate("performance.now()")
+        target = await page.evaluate(
+            """name => {
+                const pool = typeof masterLocationsV2 !== 'undefined'
+                    ? masterLocationsV2 : masterLocations;
+                const matches = pool.filter(location => location.name === name);
+                if (matches.length !== 1) {
+                    throw new Error(`Expected one location named ${name}; found ${matches.length}`);
+                }
+                return {name, lat: matches[0].lat, lng: matches[0].lng};
+            }""",
+            prompt,
+        )
+        accepted = await page.evaluate("p => window._frTap(p.lat, p.lng)", target)
+        if not accepted:
+            raise RuntimeError(f"Frontier rejected the tap for {prompt}")
+        elapsed_ms = await page.evaluate("start => performance.now() - start", before)
+        total_score = int(await page.locator("#fr-score-val").inner_text())
+        score = total_score - previous_total
+        previous_total = total_score
+        fuel = int(await page.locator("#fr-health-val").inner_text())
+        rounds.append({"round": number, **target, "score": score, "fuel": fuel,
+                       "seconds_remaining": seconds_remaining,
+                       "response_ms": round(elapsed_ms, 2)})
+        print(
+            f"  {number}: {prompt} | ({target['lat']:.5f}, {target['lng']:.5f})"
+            f" | +{score} | {seconds_remaining}s left | fuel {fuel}"
+            f" | response {elapsed_ms:.1f} ms",
+            flush=True,
+        )
+        previous_prompt = prompt
+        if number < round_limit:
+            await page.wait_for_function(
+                "previous => document.getElementById('fr-prompt-name').textContent !== previous",
+                arg=previous_prompt,
+            )
+            previous_prompt = ""
+    return {"rounds": rounds, "score": sum(r["score"] for r in rounds),
+            "fuel": rounds[-1]["fuel"]}

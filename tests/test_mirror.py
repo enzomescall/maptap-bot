@@ -53,6 +53,20 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
         await self.mirror.serve(self.route(ORIGIN + "/?devmode=1&overrideday=September20"))
         self.assertEqual(self.fetched, ["https://maptap.gg/"])
 
+    async def test_frontier_options_do_not_reach_upstream(self):
+        await self.mirror.serve(self.route(ORIGIN + "/frontier?from=practice&unlimited=1"))
+        self.assertEqual(self.fetched, ["https://maptap.gg/frontier"])
+
+    async def test_frontier_auth_uses_only_a_synthetic_local_user(self):
+        route = self.route(
+            "https://www.gstatic.com/firebasejs/9.15.0/firebase-auth-compat.js"
+        )
+        await self.mirror.serve(route)
+        body = route.fulfill.call_args.kwargs["body"].decode()
+        self.assertTrue(body.startswith("asset"))
+        self.assertIn("local-frontier-test", body)
+        self.assertIn("firebase.auth = mockAuth", body)
+
     async def test_redirects_do_not_escape_the_allowlist(self):
         async with httpx.AsyncClient(transport=httpx.MockTransport(
             lambda request: httpx.Response(302, headers={"location": "https://example.com/backend"})
