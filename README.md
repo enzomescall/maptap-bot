@@ -37,6 +37,8 @@ CDN are permitted. All writes, Firebase services, analytics, other hosts,
 WebSockets, and service workers are blocked. Redirects are not followed.
 No account is used and scores cannot reach the live leaderboards. `devmode=1` is
 also set, but network isolation does not depend on the game's developer mode.
+Blocked services can trigger the site's "Something didn't load" banner; this
+does not affect local scoring.
 
 ## Reconnaissance (September 21, 2026)
 
@@ -81,6 +83,19 @@ The default uses the browser's local date. This targets the observed daily game;
 upstream changes to globals or DOM selectors may require an update.
 
 ## Checks
+
+Browser validation on September 21, 2026:
+
+| Puzzle | Fresh sessions | Results |
+| --- | --- | --- |
+| September 21 | 3 | 1000/1000 each |
+| September 20 | 1 | 1000/1000 |
+
+All 20 scoring taps earned 100/100 with game-reported distance 0 km, and all
+four sessions had no JavaScript errors. Reports and screenshots are in
+`artifacts/validation-today/` and `artifacts/validation-september20/` locally
+(generated artifacts are excluded from Git). This verifies these puzzles,
+not every historical or future daily file.
 
 ```sh
 uv run python -m unittest discover -s tests -v

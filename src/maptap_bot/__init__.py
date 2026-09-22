@@ -10,7 +10,7 @@ import sys
 from urllib.parse import urlencode
 
 import httpx
-from playwright.async_api import async_playwright
+from playwright.async_api import Browser, async_playwright
 
 from .mirror import Mirror, ORIGIN
 from .solver import play
@@ -18,10 +18,47 @@ from .solver import play
 
 def day(value: str) -> str:
     try:
-        parsed = datetime.strptime(value, "%B%d")
+        parsed = datetime.strptime(value + "2000", "%B%d%Y")
     except ValueError as error:
         raise argparse.ArgumentTypeError("Use a month and day, e.g. September21") from error
     return parsed.strftime("%B") + str(parsed.day)
+
+
+async def session(browser: Browser, mirror: Mirror, args: argparse.Namespace, index: int) -> int:
+    print(f"Run {index}/{args.runs}: fresh local mirror (backend writes blocked)", flush=True)
+    context = await browser.new_context(
+        viewport={"width": 1280, "height": 900}, locale="en-US", service_workers="block",
+    )
+    mirror.blocked.clear()
+    await mirror.install(context)
+    page = await context.new_page()
+    page.set_default_timeout(60000)
+    output = args.output / f"run-{index}"
+    output.mkdir(parents=True, exist_ok=True)
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    options = {"devmode": "1"}
+    if args.day:
+        options["overrideday"] = args.day
+    try:
+        await page.goto(ORIGIN + "/?" + urlencode(options), wait_until="domcontentloaded")
+        report = await play(page)
+        report["data_source"] = await page.evaluate(
+            "Array.from(document.scripts, s => s.src).find(s => s.includes('/this_day_in_history/'))"
+        )
+        report["blocked_requests"] = sorted(mirror.blocked)
+        report["page_errors"] = errors
+        (output / "result.json").write_text(json.dumps(report, indent=2) + "\n")
+        await page.screenshot(path=output / "final.png")
+        return report["total"]
+    except Exception as error:
+        await page.screenshot(path=output / "failure.png")
+        (output / "failure.txt").write_text(
+            str(error) + "\n" + await page.locator("body").inner_text() + "\n" + "\n".join(errors)
+        )
+        raise
+    finally:
+        await context.close()
 
 
 async def run(args: argparse.Namespace) -> None:
@@ -34,37 +71,8 @@ async def run(args: argparse.Namespace) -> None:
                 headless=not args.headed, args=["--enable-unsafe-swiftshader"],
             )
             try:
-                for index in range(1, args.runs + 1):
-                    print(f"Run {index}/{args.runs}: fresh local mirror (backend writes blocked)", flush=True)
-                    context = await browser.new_context(
-                        viewport={"width": 1280, "height": 900},
-                        locale="en-US", service_workers="block",
-                    )
-                    await mirror.install(context)
-                    page = await context.new_page()
-                    page.set_default_timeout(60000)
-                    output = args.output / f"run-{index}"
-                    output.mkdir(parents=True, exist_ok=True)
-                    errors = []
-                    page.on("pageerror", lambda error: errors.append(str(error)))
-                    options = {"devmode": "1"}
-                    if args.day:
-                        options["overrideday"] = args.day
-                    try:
-                        await page.goto(ORIGIN + "/?" + urlencode(options), wait_until="domcontentloaded")
-                        report = await play(page)
-                        report["blocked_requests"] = sorted(mirror.blocked)
-                        report["page_errors"] = errors
-                        (output / "result.json").write_text(json.dumps(report, indent=2) + "\n")
-                        await page.screenshot(path=output / "final.png")
-                    except Exception:
-                        await page.screenshot(path=output / "failure.png")
-                        (output / "failure.txt").write_text(
-                            await page.locator("body").inner_text() + "\n" + "\n".join(errors)
-                        )
-                        raise
-                    finally:
-                        await context.close()
+                totals = [await session(browser, mirror, args, i) for i in range(1, args.runs + 1)]
+                print(f"Completed {len(totals)} games; perfect scores: {totals.count(1000)}/{len(totals)}.")
             finally:
                 await browser.close()
 
